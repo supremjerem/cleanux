@@ -1,0 +1,90 @@
+#!/bin/bash
+
+v1=*~
+v2=.*~
+v3=*#
+v4=*~#
+count=0
+param=$1 
+
+## color variables
+#
+apath=`tput setaf 5`
+tpath=`tput setaf 3`
+ccount=`tput setaf 6`
+files=`tput setaf 9`
+reset=`tput sgr0`
+
+## Check if the user is root
+#
+if [ "$EUID" -eq 0 ]; then
+
+    echo -e "********************************** START **********************************\n"
+    echo -e "You are actually in :      [ ${apath}$PWD${reset} ]"
+
+    ## Check if a parameter has been given to the command
+    #
+    if [ -n "$param" ]; then
+
+		echo -e "Checking for files in :    [ ${tpath}$param${reset} ] ...\n"
+		## Check for any files matching the variables
+		#
+		for f in $param$v1 $param$v2 $param$v3 $param$v4
+		do
+		    ## Check if the name of the file is different than the initial variable (for variable $v1, it is *~)
+		    #
+		    if [ $f != "$param$v1" ] && [ $f != "$param$v2" ] && [ $f != "$param$v3" ] && [ $f != "$param$v4" ]; then
+
+				## Force delete the file
+				#
+				rm -f $f
+		       		echo "<<<	        ${files}$f${reset}"
+				## Iterate the $count variable
+				#
+				count=$((count+1))
+		    fi
+		done
+    else
+
+	## If no parameter has beeg given to the command, the program will be exectued in the current dirrectory ($PWD)
+	#
+	echo -e "Checking for files in :    [ ${tpath}$PWD${reset} ] ...\n"
+
+	
+	## Check for any files matching the variables
+	#
+	for f in $v1 $v2 $v3 $v4 
+		do
+      	    ## Check for any files matching the variables
+		    #
+		    if [ $f != "$v1" ] && [ $f != "$v2" ] && [ $f != "$v3" ] && [ $f != "$v4" ]; then
+
+				## Force delete the file
+				#
+				rm -f $f
+		       		echo "<<<	        ${files}$PWD/$f${reset}"
+				## Iterate the $count variable
+				#
+				count=$((count+1))
+		    fi
+		done
+    fi
+
+    ## Output the number of files removed, if any
+    #
+    if [ $count -le 1 ]; then
+		if [ $count -eq 0 ]; then
+		    echo -e "                            Nothing To Clean !\n"
+		else
+		    echo -e "\n         TOTAL : ${ccount}$count${reset} file removed\n"
+		fi
+    else
+		echo -e "\n          TOTAL : ${ccount}$count${reset} files removed\n"
+    fi
+
+    echo "*********************************** END ***********************************"
+else
+    ## If you are not running the program as root, a message will invite you to do so
+    #
+    echo -e "***** You need to be root to run this program ! *****\n"
+fi
