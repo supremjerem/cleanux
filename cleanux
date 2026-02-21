@@ -1,90 +1,95 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -uo pipefail
 
-v1=*~
-v2=.*~
-v3=*#
-v4=*~#
-count=0
-param=$1 
+# Emacs backup and auto-save file patterns
+readonly PATTERNS=('*~' '.*~' '#*#')
 
-## color variables
-#
-apath=`tput setaf 5`
-tpath=`tput setaf 3`
-ccount=`tput setaf 6`
-files=`tput setaf 9`
-reset=`tput sgr0`
-
-## Check if the user is root
-#
-if [ "$EUID" -eq 0 ]; then
-
-    echo -e "********************************** START **********************************\n"
-    echo -e "You are actually in :      [ ${apath}$PWD${reset} ]"
-
-    ## Check if a parameter has been given to the command
-    #
-    if [ -n "$param" ]; then
-
-		echo -e "Checking for files in :    [ ${tpath}$param${reset} ] ...\n"
-		## Check for any files matching the variables
-		#
-		for f in $param$v1 $param$v2 $param$v3 $param$v4
-		do
-		    ## Check if the name of the file is different than the initial variable (for variable $v1, it is *~)
-		    #
-		    if [ $f != "$param$v1" ] && [ $f != "$param$v2" ] && [ $f != "$param$v3" ] && [ $f != "$param$v4" ]; then
-
-				## Force delete the file
-				#
-				rm -f $f
-		       		echo "<<<	        ${files}$f${reset}"
-				## Iterate the $count variable
-				#
-				count=$((count+1))
-		    fi
-		done
-    else
-
-	## If no parameter has beeg given to the command, the program will be exectued in the current dirrectory ($PWD)
-	#
-	echo -e "Checking for files in :    [ ${tpath}$PWD${reset} ] ...\n"
-
-	
-	## Check for any files matching the variables
-	#
-	for f in $v1 $v2 $v3 $v4 
-		do
-      	    ## Check for any files matching the variables
-		    #
-		    if [ $f != "$v1" ] && [ $f != "$v2" ] && [ $f != "$v3" ] && [ $f != "$v4" ]; then
-
-				## Force delete the file
-				#
-				rm -f $f
-		       		echo "<<<	        ${files}$PWD/$f${reset}"
-				## Iterate the $count variable
-				#
-				count=$((count+1))
-		    fi
-		done
-    fi
-
-    ## Output the number of files removed, if any
-    #
-    if [ $count -le 1 ]; then
-		if [ $count -eq 0 ]; then
-		    echo -e "                            Nothing To Clean !\n"
-		else
-		    echo -e "\n         TOTAL : ${ccount}$count${reset} file removed\n"
-		fi
-    else
-		echo -e "\n          TOTAL : ${ccount}$count${reset} files removed\n"
-    fi
-
-    echo "*********************************** END ***********************************"
+# Color variables — gracefully degrade on terminals that don't support colors
+if tput setaf 1 &>/dev/null; then
+    apath=$(tput setaf 5)
+    tpath=$(tput setaf 3)
+    ccount=$(tput setaf 6)
+    files=$(tput setaf 9)
+    reset=$(tput sgr0)
 else
-    ## If you are not running the program as root, a message will invite you to do so
-    #
-    echo -e "***** You need to be root to run this program ! *****\n"
+    apath='' tpath='' ccount='' files='' reset=''
 fi
+
+usage() {
+    echo "Usage: cleanux [-h] [-n] [-r] [DIRECTORY]"
+    echo ""
+    echo "Remove Emacs backup and auto-save files."
+    echo ""
+    echo "Options:"
+    echo "  -h, --help       Show this help message"
+    echo "  -n, --dry-run    Show files that would be deleted without deleting them"
+    echo "  -r, --recursive  Clean all subdirectories recursively"
+    echo ""
+    echo "Arguments:"
+    echo "  DIRECTORY        Directory to clean (default: current directory)"
+}
+
+dry_run=false
+recursive=false
+target=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)      usage; exit 0 ;;
+        -n|--dry-run)   dry_run=true; shift ;;
+        -r|--recursive) recursive=true; shift ;;
+        -*)             echo "Unknown option: $1"; usage >&2; exit 1 ;;
+        *)              target="$1"; shift ;;
+    esac
+done
+
+count=0
+target="${target:-$PWD}"
+target="${target%/}"  # Strip any trailing slash
+
+echo -e "********************************** START **********************************\n"
+echo -e "You are currently in :     [ ${apath}${PWD}${reset} ]"
+
+# Validate the target directory
+if [[ ! -d "$target" ]]; then
+    echo -e "Error: '${target}' is not a valid directory.\n"
+    echo "*********************************** END ***********************************"
+    exit 1
+fi
+
+# Require root only when the target directory needs elevated privileges
+if [[ ! -w "$target" ]] && [[ "$EUID" -ne 0 ]]; then
+    echo -e "Error: '${target}' requires elevated privileges. Re-run with sudo.\n"
+    echo "*********************************** END ***********************************"
+    exit 1
+fi
+
+$dry_run && mode_label=" [DRY RUN]" || mode_label=""
+echo -e "Checking for files in :    [ ${tpath}${target}${reset} ]${mode_label} ...\n"
+
+# Build find options: -maxdepth 1 for flat mode, no limit for recursive
+find_opts=(-maxdepth 1)
+$recursive && find_opts=()
+
+# -print0 + read -d '' safely handles filenames with spaces or special characters
+while IFS= read -r -d '' f; do
+    if $dry_run; then
+        echo -e "[DRY RUN] <<<   ${files}${f}${reset}"
+    else
+        rm -f -- "$f"
+        echo -e "<<<             ${files}${f}${reset}"
+    fi
+    count=$((count + 1))
+done < <(find "$target" ${find_opts[@]+"${find_opts[@]}"} -type f \
+    \( -name '*~' -o -name '.*~' -o -name '#*#' \) -print0)
+
+# Output the number of files removed (or that would be removed)
+if (( count == 0 )); then
+    echo -e "                            Nothing To Clean !\n"
+elif (( count == 1 )); then
+    echo -e "\n         TOTAL : ${ccount}${count}${reset} file removed\n"
+else
+    echo -e "\n          TOTAL : ${ccount}${count}${reset} files removed\n"
+fi
+
+echo "*********************************** END ***********************************"
